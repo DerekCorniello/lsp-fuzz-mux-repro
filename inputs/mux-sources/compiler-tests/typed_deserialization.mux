@@ -1,0 +1,32 @@
+// Serialization is explicit Mux code. The compiler does not synthesize
+// mapping methods for class fields.
+
+import std.data.json
+
+class Config is JsonRepresentable {
+    int port = 0
+    string host = ""
+
+    func to_json() returns result<Json, JsonError> {
+        return json.parse("{}")
+    }
+
+    common func from_json(string text) returns result<Config, JsonError> {
+        auto ignored = use json.parse(text)
+        auto config = Config.new()
+        return ok(config)
+    }
+}
+
+func main() returns void {
+    auto config = Config.new()
+    match config.to_json() {
+        ok(_) { print("explicit json") }
+        err(e) { print(e.message()) }
+    }
+    match Config.from_json("{}") {
+        ok(_) { print("explicit parser") }
+        err(e) { print(e.message()) }
+    }
+    return
+}

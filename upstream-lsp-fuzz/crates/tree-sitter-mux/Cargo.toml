@@ -1,0 +1,16 @@
+[package]
+name = "tree-sitter-mux"
+version = "0.1.0"
+edition = "2021"
+description = "Mux grammar for tree-sitter"
+license = "MIT"
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[build-dependencies]
+cc = "1"

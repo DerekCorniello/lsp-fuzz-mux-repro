@@ -1,0 +1,5 @@
+import std
+import std.math.*
+
+assert(true, "std root + math wildcard")
+print("PASS: std root + math wildcard")

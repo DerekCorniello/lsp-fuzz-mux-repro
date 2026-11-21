@@ -1,0 +1,62 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+ahash = { version = "0.8" }
+anyhow = { version = "1", features = ["backtrace"] }
+const-str = "0.6"
+ctrlc = "3.4"
+derive_more = { version = "2", features = ["full"] }
+bitflags = "2.6.0"
+derive-new = "0.7"
+indexmap = { version = "2", features = ["serde"] }
+memmap2 = "0.9"
+ordermap = { version = "0.5", features = ["serde"] }
+clap = { version = "4", features = ["derive", "color", "env", "unicode"] }
+fastbloom = { version = "0.9.0", features = ["serde"] }
+itertools = "0.*"
+libafl = { version = "0.*", features = [
+    "errors_backtrace",
+    "casr",
+    "nautilus",
+] }
+libafl_bolts = { version = "0.*" }
+libcasr = { version = "2", features = ["serde"] }
+lcov = "0.8.1"
+lsp-types = { git = "https://github.com/henryhchchc/lsp-types.git", rev = "00b517e1936150cd8ab7a02aeb602c2a5fe66a46", features = [
+    "hash",
+] }
+nix = { version = "0.29", features = ["resource"] }
+num_cpus = "1.16"
+os_pipe = "1.2.1"
+rayon = "1"
+rustversion = "1"
+smallbitvec = "2"
+serde = "1"
+serde_cbor = "0.11"
+serde_json = { version = "1", features = ["preserve_order"] }
+static_assertions = "1.1.0"
+smallvec = { version = "1.15", features = ["const_generics"] }
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0"
+tokio-util = { version = "0", features = ["full"] }
+tempfile = "3"
+tree-sitter = { version = "0.25" }
+tuple_list = "0.1"
+zstd = { version = "0.13", features = ["zstdmt"], default-features = false }
+
+[patch.crates-io]
+libafl = { git = "https://github.com/henryhchchc/LibAFL.git", branch = "dev" }
+libafl_bolts = { git = "https://github.com/henryhchchc/LibAFL.git", branch = "dev" }
+
+[profile.release]
+debug = true
+opt-level = 3
+lto = true

@@ -1,0 +1,83 @@
+diff --git a/mux-compiler/Cargo.toml b/mux-compiler/Cargo.toml
+index 8c7095c..029674c 100644
+--- a/mux-compiler/Cargo.toml
++++ b/mux-compiler/Cargo.toml
+@@ -24,6 +24,9 @@ unnested_or_patterns = "deny"
+ name = "mux"
+ path = "src/main.rs"
+ 
++[features]
++afl-shmem-input = []
++
+ [dependencies]
+ mux-update = { version = "0.1.0", path = "../mux-update" }
+ anstream = "1"
+@@ -57,6 +60,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
+ [build-dependencies]
+ set-git-hooks-dir = "1.0"
+ 
++[target.'cfg(unix)'.dependencies]
++libc = "0.2"
++
+ [target.'cfg(windows)'.dependencies]
+ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+ 
+diff --git a/mux-compiler/src/lsp.rs b/mux-compiler/src/lsp.rs
+index 2e1bf52..fe41d88 100644
+--- a/mux-compiler/src/lsp.rs
++++ b/mux-compiler/src/lsp.rs
+@@ -77,7 +77,54 @@ struct ServerState {
+     supports_snippets: bool,
+ }
+ 
++#[cfg(feature = "afl-shmem-input")]
++#[unsafe(no_mangle)]
++pub static mut __afl_sharedmem_fuzzing: libc::c_int = 1;
++
++#[cfg(feature = "afl-shmem-input")]
++fn install_afl_shared_memory_input() -> std::io::Result<()> {
++    use std::io::{Seek, SeekFrom, Write};
++    use std::os::fd::{FromRawFd, IntoRawFd};
++
++    unsafe extern "C" {
++        static __afl_fuzz_ptr: *mut u8;
++        static __afl_fuzz_len: *mut u32;
++    }
++
++    // SAFETY: These symbols are provided by the AFL++ runtime linked into the
++    // instrumented target. They are only non-null when the target runs under an
++    // AFL++ forkserver that advertised shared-memory test case delivery.
++    unsafe {
++        let input_ptr = __afl_fuzz_ptr;
++        let input_len_ptr = __afl_fuzz_len;
++        if input_ptr.is_null() || input_len_ptr.is_null() {
++            return Ok(());
++        }
++        let input_len = *input_len_ptr as usize;
++        let input = std::slice::from_raw_parts(input_ptr, input_len);
++
++        let name = c"mux-lsp-afl-input";
++        let fd = libc::memfd_create(name.as_ptr(), 0);
++        if fd < 0 {
++            return Err(std::io::Error::last_os_error());
++        }
++        let mut file = std::fs::File::from_raw_fd(fd);
++        file.write_all(input)?;
++        file.seek(SeekFrom::Start(0))?;
++        let raw_fd = file.into_raw_fd();
++        if libc::dup2(raw_fd, libc::STDIN_FILENO) < 0 {
++            let error = std::io::Error::last_os_error();
++            libc::close(raw_fd);
++            return Err(error);
++        }
++        libc::close(raw_fd);
++    }
++    Ok(())
++}
++
+ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
++    #[cfg(feature = "afl-shmem-input")]
++    install_afl_shared_memory_input()?;
+     let (connection, io_threads) = Connection::stdio();
+     let (workspace_folders, supports_document_changes, supports_snippets) =
+         initialize(&connection)?;

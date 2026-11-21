@@ -1,0 +1,48 @@
+[package]
+name = "lsp-fuzz"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+lsp-fuzz-grammars = { path = "../lsp-fuzz-grammars" }
+
+ahash.workspace = true
+anyhow.workspace = true
+bitflags.workspace = true
+clap.workspace = true
+const-str.workspace = true
+derive-new.workspace = true
+derive_more.workspace = true
+dot-structures = "0.1.1"
+fastbloom.workspace = true
+fluent-uri = "0.4"
+graphviz-rust = { version = "0.9.3", default-features = false }
+indexmap.workspace = true
+itertools.workspace = true
+kmp = "0.1"
+lcov.workspace = true
+libafl.workspace = true
+libafl_bolts.workspace = true
+libc = "0.2"
+lsp-types.workspace = true
+memmap2.workspace = true
+nix.workspace = true
+ordermap.workspace = true
+os_pipe.workspace = true
+regex-syntax = "0.8.5"
+serde.workspace = true
+serde_cbor.workspace = true
+serde_json.workspace = true
+smallbitvec.workspace = true
+smallvec.workspace = true
+static_assertions.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+trait-gen = "0.3.2"
+tree-sitter.workspace = true
+tuple_list.workspace = true
+zstd.workspace = true
+
+[features]
+profiling = ["libafl/introspection"]

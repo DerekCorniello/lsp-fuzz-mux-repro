@@ -1,0 +1,60 @@
+{
+  "artifact": "LSPFuzz paper snapshot",
+  "lsp_fuzz_repo": "https://github.com/henryhchchc/lsp-fuzz.git",
+  "lsp_fuzz_rev": "a1d4c65ad6f0b2160fcfb774250295e2270b0b86",
+  "lsp_fuzz_compat_patches": [
+    "lsp-types pinned to 00b517e1936150cd8ab7a02aeb602c2a5fe66a46",
+    "direct fluent-uri dependency moved to 0.4",
+    "Cargo.lock tracked",
+    "export-baseline command added for replaying TwoDimBaselineInput solutions without ASAN logs"
+  ],
+  "subject": {
+    "repo": "https://github.com/muxlang/mux-compiler.git",
+    "rev": "e0f4d43bd6e51bb48d428bf8ca174415294d08e9",
+    "binary": "mux",
+    "arguments": [
+      "lsp"
+    ],
+    "transport": "stdio",
+    "runtime_rev": "44c164514e2b4b75db10c683dba8c73c58906603"
+  },
+  "grammar": {
+    "repo": "https://github.com/muxlang/tree-sitter-mux.git",
+    "rev": "e7a030806b2a1b996078a3101a4655debd4ac51a",
+    "extension": "mux",
+    "lsp_language_id": "mux"
+  },
+  "fragment_sources": {
+    "mux_examples_repo": "https://github.com/muxlang/mux-examples.git",
+    "mux_examples_rev": "34698ff5af8279a71148dd87388a74df66449ef7",
+    "compiler_tests_rev": "e0f4d43bd6e51bb48d428bf8ca174415294d08e9"
+  },
+  "tools": {
+    "aflpp_repo": "https://github.com/AFLplusplus/AFLplusplus.git",
+    "aflpp_rev": "d798677805de81b50aa8f45beb0342ae1617b9d8",
+    "cargo_afl": "0.18.2",
+    "llvm": "22.1.8",
+    "llvm_config": "/usr/bin/llvm-config-22",
+    "rust_stable": "1.93.1 (01f6ddf75 2026-02-11)",
+    "rust_nightly": "1.100.0-nightly (fd7ed57df 2026-08-29)"
+  },
+  "harness_patch": "targets/mux/afl-shmem.patch",
+  "builds": {
+    "profile": "debug",
+    "instrumented_sha256": "77afffa28e5704a0b51ceafb6844f3b865a842e42e50abffb7faaf70e6c757b1",
+    "ordinary_sha256": "15a27bfb33418fbf39c4b25998eb805bb25222cbcc698f1d2787cebc153bb1ec",
+    "harness_patch_sha256": "b8e92df60b2e47c740eadd7f78d6c89e9a9e1ab8fba0df3e632d2a3e00551df6",
+    "afl_map_size": 390922
+  },
+  "fragments": {
+    "database": "inputs/mux-fragments.cbor.zst",
+    "sha256": "969712e86b689a18e2addd01ced0b9491dda81afbdfa8417fcb6efbe326d646d",
+    "bytes": 262171,
+    "source_files": 355,
+    "sources": [
+      "mux-examples",
+      "mux-compiler test_scripts"
+    ],
+    "generated_seed_inputs": 32
+  }
+}

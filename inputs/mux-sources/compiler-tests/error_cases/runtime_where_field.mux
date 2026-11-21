@@ -1,0 +1,10 @@
+// A field assignment violating the field's where constraint panics.
+
+class Port {
+    int number = 80 where { number > 0, number < 65535 }
+}
+
+auto p = Port.new()
+int too_big = 70000
+p.number = too_big
+print("unreachable")

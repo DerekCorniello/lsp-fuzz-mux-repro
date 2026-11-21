@@ -1,0 +1,8 @@
+{
+  "mux_compiler_repo": "https://github.com/muxlang/mux-compiler.git",
+  "mux_compiler_rev": "e0f4d43bd6e51bb48d428bf8ca174415294d08e9",
+  "mux_examples_repo": "https://github.com/muxlang/mux-examples.git",
+  "mux_examples_rev": "34698ff5af8279a71148dd87388a74df66449ef7",
+  "tree_sitter_mux_rev": "e7a030806b2a1b996078a3101a4655debd4ac51a",
+  "source_files": 355
+}

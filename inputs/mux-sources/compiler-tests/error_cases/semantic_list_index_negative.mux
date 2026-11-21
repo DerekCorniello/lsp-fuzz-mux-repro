@@ -1,0 +1,6 @@
+// A negative index that reaches before the start of a known list literal is
+// provably out of bounds, so it is rejected at compile time. Valid negatives
+// (down to -length) count from the end like Python; see
+// test_scripts/list_negative_index.mux.
+
+print([1, 2, 3][-5].to_string())

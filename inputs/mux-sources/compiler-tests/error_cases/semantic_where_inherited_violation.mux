@@ -1,0 +1,17 @@
+// A literal argument violating a precondition inherited from an interface
+// method is a guaranteed panic, so the call is rejected at compile time.
+
+interface Divider {
+    func div(int n) where { n != 0 } returns int
+}
+
+class Calc is Divider {
+    int total
+
+    func div(int amount) returns int {
+        return 100 / amount
+    }
+}
+
+auto c = Calc.new()
+print(c.div(0).to_string())

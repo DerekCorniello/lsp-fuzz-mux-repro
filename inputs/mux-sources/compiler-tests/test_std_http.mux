@@ -1,0 +1,71 @@
+import std.net
+
+func typed_http_signatures(string target, bytes payload) returns result<int, HttpError> {
+    auto headers = net.Headers.new()
+    auto request = net.HttpRequest.new()
+    request.method = "POST"
+    request.url = target
+    request.headers = headers
+    request.body = payload
+    request.timeout_ms = 30_000
+    request.max_redirects = 10
+    request.retries = 0
+    auto response = use request.send()
+    auto status = response.status
+    assert(status > 0, "invalid response status")
+    response.headers
+    use response.error_for_status()
+    use response.read_bytes(16)
+    auto configured = use net.HttpRequest.from_config("POST", target, headers, payload)
+    configured.url
+    return ok(1)
+}
+
+func request_once() returns result<int, HttpError> {
+    auto request = net.HttpRequest.new()
+    request.method = "GET"
+    request.url = "https://httpbingo.org/get"
+    auto response = use request.send()
+    auto status = response.status
+    if status != 200 {
+        return err(HttpError.from_message("unexpected status: " + status.to_string()))
+    }
+    use response.read_bytes(16 * 1024 * 1024)
+    return ok(status)
+}
+
+func main() returns void {
+    print("Starting http client smoke test")
+
+    auto synthetic_error = HttpError.from_message("offline transport")
+    assert(synthetic_error.kind == net.HttpErrorKind.Transport, "HTTP error kind")
+    assert(synthetic_error.status == 0, "HTTP error status")
+    assert(synthetic_error.message() == "offline transport", "HTTP error message")
+
+    string last_error = "no attempts made"
+    bool success = false
+    int attempt = 0
+    while attempt < 3 && !success {
+        attempt += 1
+        auto attempt_result = request_once()
+        if attempt_result.is_ok() {
+            success = true
+        } else {
+            last_error = attempt_result.error().message()
+        }
+    }
+    assert(success, "http request failed after " + attempt.to_string() + " attempts: " + last_error)
+    print("http request success path validated")
+
+    auto invalid_req = net.HttpRequest.new()
+    auto invalid_result = invalid_req.send()
+    if invalid_result.is_ok() {
+        assert(false, "expected invalid request to fail")
+    } else {
+        print("http invalid-request path validated: " + invalid_result.error().message())
+    }
+
+    print("http smoke test passed")
+
+    return
+}

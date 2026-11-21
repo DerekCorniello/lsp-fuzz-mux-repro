@@ -1,0 +1,191 @@
+use std::{
+    fmt::{self, Debug},
+    iter::FusedIterator,
+    ops::Range,
+    ptr::NonNull,
+};
+
+use tree_sitter::{QueryCaptures, QueryCursor, StreamingIterator, TextProvider};
+
+use crate::text_document::{GrammarBasedMutation, TextDocument};
+
+/// A trait for iterating over nodes in a [`tree_sitter::Tree`].
+///
+/// This allows easy traversal of all nodes in a tree-sitter syntax tree.
+pub trait TreeIter {
+    /// Returns an iterator over all nodes in the tree in pre-order traversal.
+    ///
+    /// # Returns
+    ///
+    /// An iterator yielding each node in the tree.
+    fn iter(&self) -> TreeIterator<'_>;
+}
+
+impl TreeIter for tree_sitter::Tree {
+    fn iter(&self) -> TreeIterator<'_> {
+        let node_count = self.root_node().descendant_count();
+        let available_descendants = 0..node_count;
+        let cursor = self.walk();
+
+        TreeIterator {
+            descendant_indices: available_descendants.into_iter(),
+            cursor,
+        }
+    }
+}
+
+impl TreeIter for tree_sitter::Node<'_> {
+    fn iter(&self) -> TreeIterator<'_> {
+        let node_count = self.descendant_count();
+        let available_descendants = 0..node_count;
+        let cursor = self.walk();
+
+        TreeIterator {
+            descendant_indices: available_descendants.into_iter(),
+            cursor,
+        }
+    }
+}
+
+/// An iterator over all nodes in a tree-sitter syntax tree.
+///
+/// This iterator provides efficient access to all nodes in a pre-order traversal.
+pub struct TreeIterator<'tree> {
+    /// Iterator over the indices of descendants to visit
+    descendant_indices: <Range<usize> as IntoIterator>::IntoIter,
+    /// Cursor used to navigate the tree
+    cursor: tree_sitter::TreeCursor<'tree>,
+}
+
+impl Debug for TreeIterator<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TreeIterator")
+            .field("indices", &self.descendant_indices)
+            .finish()
+    }
+}
+
+impl<'tree> Iterator for TreeIterator<'tree> {
+    type Item = tree_sitter::Node<'tree>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.descendant_indices.next().map(|idx| {
+            self.cursor.goto_descendant(idx);
+            self.cursor.node()
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.descendant_indices.size_hint()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.descendant_indices.nth(n).map(|idx| {
+            self.cursor.goto_descendant(idx);
+            self.cursor.node()
+        })
+    }
+}
+
+impl ExactSizeIterator for TreeIterator<'_> {
+    fn len(&self) -> usize {
+        self.descendant_indices.len()
+    }
+}
+
+impl FusedIterator for TreeIterator<'_> {}
+
+impl<'a> TextProvider<&'a [u8]> for &'a TextDocument {
+    type I = std::iter::Once<&'a [u8]>;
+
+    fn text(&mut self, node: tree_sitter::Node<'_>) -> Self::I {
+        std::iter::once(&self.content()[node.byte_range()])
+    }
+}
+
+pub struct CapturesIterator<'doc> {
+    cursor_ptr: NonNull<tree_sitter::ffi::TSQueryCursor>,
+    captures: QueryCaptures<'doc, 'doc, &'doc TextDocument, &'doc [u8]>,
+    capture_index: u32,
+}
+
+impl Debug for CapturesIterator<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CapturesIterator")
+            .field("captures", &(&self.captures as *const _))
+            .field("capture_index", &self.capture_index)
+            .finish()
+    }
+}
+
+impl<'doc> CapturesIterator<'doc> {
+    pub fn new<Name>(doc: &'doc TextDocument, group_name: Name) -> Option<Self>
+    where
+        Name: AsRef<str>,
+    {
+        let parse_tree = doc.parse_tree();
+        let query = doc.language().ts_highlight_query();
+        let capture_index = query.capture_index_for_name(group_name.as_ref())?;
+        let mut cursor = QueryCursor::new();
+        let captures = unsafe {
+            // Safety: We do not drop the cursor until self is dropped. Therefore it is ok to extend the lifetime of the cursor to that of self.
+            std::mem::transmute::<QueryCaptures<'_, 'doc, _, _>, QueryCaptures<'doc, 'doc, _, _>>(
+                cursor.captures(query, parse_tree.root_node(), doc),
+            )
+        };
+        let cursor_ptr = NonNull::new(cursor.into_raw())
+            .expect("QueryCursor::into_raw() does not return a null pointer");
+
+        Some(Self {
+            cursor_ptr,
+            captures,
+            capture_index,
+        })
+    }
+}
+
+impl Drop for CapturesIterator<'_> {
+    fn drop(&mut self) {
+        let _ = unsafe { QueryCursor::from_raw(self.cursor_ptr.as_mut()) };
+    }
+}
+
+impl<'doc> Iterator for CapturesIterator<'doc> {
+    type Item = tree_sitter::Node<'doc>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((query_match, index)) = self.captures.next() {
+            let capture = query_match.captures[*index];
+            if capture.index == self.capture_index {
+                return Some(capture.node);
+            }
+        }
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (_lower, upper) = self.captures.size_hint();
+        (0, upper)
+    }
+}
+
+pub trait TSNodeExt {
+    fn lsp_start_position(&self) -> lsp_types::Position;
+    fn lsp_end_position(&self) -> lsp_types::Position;
+}
+
+impl TSNodeExt for tree_sitter::Node<'_> {
+    fn lsp_start_position(&self) -> lsp_types::Position {
+        lsp_types::Position {
+            line: self.start_position().row as u32,
+            character: self.start_position().column as u32,
+        }
+    }
+
+    fn lsp_end_position(&self) -> lsp_types::Position {
+        lsp_types::Position {
+            line: self.end_position().row as u32,
+            character: self.end_position().column as u32,
+        }
+    }
+}

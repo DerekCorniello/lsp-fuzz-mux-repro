@@ -1,0 +1,26 @@
+// Nested and collection mapping is intentionally application-defined. This
+// fixture verifies that an explicit parser remains an ordinary class method.
+
+import std.data.json
+
+class Order is JsonRepresentable {
+    int id = 0
+
+    func to_json() returns result<Json, JsonError> {
+        return json.parse("{\"id\":0}")
+    }
+
+    common func from_json(string text) returns result<Order, JsonError> {
+        auto ignored = use json.parse(text)
+        auto order = Order.new()
+        return ok(order)
+    }
+}
+
+func main() returns void {
+    match Order.from_json("{\"id\":7}") {
+        ok(order) { print("id " + order.id.to_string()) }
+        err(e) { print(e.message()) }
+    }
+    return
+}

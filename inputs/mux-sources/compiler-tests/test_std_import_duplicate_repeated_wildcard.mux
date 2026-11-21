@@ -1,0 +1,5 @@
+import std.math.*
+import std.math.*
+
+assert(true, "repeated math wildcard")
+print("PASS: repeated math wildcard")

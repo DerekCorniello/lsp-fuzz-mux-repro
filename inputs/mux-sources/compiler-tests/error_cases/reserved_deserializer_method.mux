@@ -1,0 +1,12 @@
+// Deserializers are ordinary methods now. A call to one that the class did not
+// declare must fail instead of finding a compiler-generated implementation.
+
+class Config {
+    int port = 0
+
+}
+
+func main() returns void {
+    auto parsed = Config.from_json("{}")
+    return
+}

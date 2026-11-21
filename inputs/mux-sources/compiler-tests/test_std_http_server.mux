@@ -1,0 +1,72 @@
+import std.net
+import std.sync
+
+func run_http_server() returns result<int, string> {
+    auto listener_result = net.TcpListener.bind("127.0.0.1:0")
+    if listener_result.is_err() {
+        return err(listener_result.error().message())
+    }
+    auto listener = listener_result.value()
+    auto addr_result = listener.local_addr()
+    if addr_result.is_err() {
+        return err(addr_result.error().message())
+    }
+    auto addr = addr_result.value()
+    auto client_result = sync.spawn(func() returns void {
+        auto request = net.HttpRequest.new()
+        request.method = "POST"
+        request.url = "http://" + addr + "/echo?x=1"
+        request.body = b"{\"message\":\"hello\"}"
+        auto response_result = request.send()
+        if response_result.is_err() {
+            assert(false, "client request failed: " + response_result.error().message())
+            return
+        }
+        auto response = response_result.value()
+        assert(response.status == 200, "unexpected status from server")
+        return
+    })
+    if client_result.is_err() {
+        listener.close()
+        return err(client_result.error().message())
+    }
+    auto client = client_result.value()
+
+    auto config = net.HttpServerConfig.new()
+    config.max_body_bytes = 1048576
+    config.worker_count = 2
+    auto response_body = b"{\"ok\":true}"
+
+    auto served = net.HttpServer.serve(listener, config, func(HttpRequest request) returns result<HttpResponse, HttpError> {
+        assert(request.method == "POST", "unexpected request method")
+        assert(request.url == "/echo?x=1", "unexpected request path")
+        auto response = net.HttpResponse.new()
+        response.status = 200
+        response.headers = net.Headers.new()
+        response.body = response_body
+        return ok(response)
+    }, 1)
+    if served.is_err() {
+        return err(served.error().message())
+    }
+    print("http server response sent")
+    auto joined = client.join()
+    if joined.is_err() {
+        listener.close()
+        return err(joined.error().message())
+    }
+    print("client join ok")
+    listener.close()
+    return ok(0)
+}
+
+func main() returns void {
+    print("Starting http server smoke test")
+    auto result = run_http_server()
+    if result.is_err() {
+        print("http server smoke test failed: " + result.error())
+        return
+    }
+    print("http server smoke test passed")
+    return
+}

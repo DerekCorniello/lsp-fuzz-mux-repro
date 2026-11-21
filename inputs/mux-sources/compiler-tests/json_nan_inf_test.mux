@@ -1,0 +1,40 @@
+import std.data.json
+
+func check_nonfinite(map<string, float> values, string label) returns void {
+    auto json_result = json.from_map(values)
+    if json_result.is_err() {
+        print("failed to create Json from map with " + label + ": " + json_result.error().message())
+    } else {
+        auto text_result = json_result.value().stringify(none)
+        if text_result.is_ok() {
+            print("unexpected ok for " + label)
+        } else {
+            print(label + " error (expected): " + text_result.error().message())
+        }
+    }
+    return
+}
+
+func check_finite(map<string, float> values) returns void {
+    auto json_result = json.from_map(values)
+    if json_result.is_err() {
+        print("failed to create Json from map with finite: " + json_result.error().message())
+    } else {
+        auto text_result = json_result.value().stringify(some(2))
+        if text_result.is_ok() {
+            print("finite floats ok: " + text_result.value())
+        } else {
+            print("unexpected error for finite: " + text_result.error().message())
+        }
+    }
+    return
+}
+
+// Test that stringify rejects NaN and infinities.
+check_nonfinite({"x": 0.0 / 0.0}, "NaN")
+check_nonfinite({"x": 1.0 / 0.0}, "+Inf")
+check_nonfinite({"x": -1.0 / 0.0}, "-Inf")
+
+// Valid finite floats still work.
+check_finite({"x": 3.14, "y": -42.0, "z": 0.0})
+print("all NaN/Inf tests completed!")

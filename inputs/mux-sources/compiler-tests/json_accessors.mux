@@ -1,0 +1,69 @@
+// Reading values out of a JSON document.
+//
+// `stringify` used to be the only method a `Json` had, so inspecting a value
+// meant serializing it back to JSON text. A string field came back ENCODED -
+// `"Ada"`, six characters including the quotes - and stripping them needs
+// string operations Mux does not have yet, so a string could not be read out of
+// a document at all. A number arrived as a float, and `"36.0".to_int()` fails,
+// so reading an integer took three conversions.
+//
+// Each accessor returns an `optional<T>` and yields `none` when the value is a
+// different kind. That is ordinary control flow when reading a document rather
+// than an error worth reporting, which is the same reasoning that makes
+// `list.get` an optional.
+
+import std.data.json
+
+func read_string(map<string, Json> obj, string key) returns string {
+    if !obj.contains(key) {
+        return "<missing>"
+    }
+    auto text = obj[key].as_string()
+    if text.is_ok() {
+        return text.value()
+    }
+    return "<not a string>"
+}
+
+func inspect_accessors() returns result<int, JsonError> {
+    auto doc = use json.parse("{\"name\":\"Ada\",\"age\":36,\"score\":1.5,\"active\":true,\"tags\":[\"x\",\"y\"],\"nothing\":null}")
+    auto fields = use json.to_map(doc)
+    print("name: " + read_string(fields, "name"))
+
+    auto age = fields["age"].as_int()
+    if age.is_ok() { print("age: " + age.value().to_string()) } else { print("age: not an int") }
+    auto score = fields["score"].as_float()
+    if score.is_ok() { print("score: " + score.value().to_string()) } else { print("score: not a float") }
+    auto active = fields["active"].as_bool()
+    if active.is_ok() { print("active: " + active.value().to_string()) } else { print("active: not a bool") }
+    auto tags = fields["tags"].as_list()
+    if tags.is_ok() { print("tags: " + tags.value().size().to_string() + " entries") } else { print("tags: not a list") }
+
+    print("nothing is null: " + fields["nothing"].is_null().to_string())
+    print("name is null:    " + fields["name"].is_null().to_string())
+
+    auto wrong_kind = fields["name"].as_int()
+    if wrong_kind.is_ok() { print("name as int: " + wrong_kind.value().to_string()) } else { print("name as int: none") }
+
+    auto numbers = use json.parse("{\"whole\":42.0,\"partial\":1.5}")
+    auto nmap = use json.to_map(numbers)
+    auto whole_int = nmap["whole"].as_int()
+    if whole_int.is_ok() { print("42.0 as int: " + whole_int.value().to_string()) } else { print("42.0 as int: none") }
+    auto partial_int = nmap["partial"].as_int()
+    if partial_int.is_ok() { print("1.5 as int: " + partial_int.value().to_string()) } else { print("1.5 as int: none") }
+    auto whole_float = nmap["whole"].as_float()
+    if whole_float.is_ok() { print("42.0 as float: " + whole_float.value().to_string()) } else { print("42.0 as float: none") }
+
+    auto map_result = doc.as_map()
+    if map_result.is_ok() { print("as_map: " + map_result.value().size().to_string() + " fields") } else { print("as_map: not an object") }
+    return ok(1)
+}
+
+func main() returns void {
+    auto result = inspect_accessors()
+    if result.is_err() {
+        print(result.error().message())
+    }
+
+    return
+}

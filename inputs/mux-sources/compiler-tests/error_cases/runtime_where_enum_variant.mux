@@ -1,0 +1,10 @@
+// Constructing an enum variant that violates its where clause panics.
+
+enum Status {
+    Unknown,
+    Code(int value) where { value >= 100, value <= 599 }
+}
+
+int bad_code = 9999
+auto bad = Status.Code(bad_code)
+print("unreachable")

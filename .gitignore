@@ -1,0 +1,9 @@
+# Local tool builds and campaign artifacts (re-downloadable/re-generatable)
+.tools/
+build/
+results/*
+!results/.gitkeep
+!results/README.md
+target/
+**/target/
+*.log

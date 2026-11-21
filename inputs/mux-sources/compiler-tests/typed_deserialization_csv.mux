@@ -1,0 +1,31 @@
+// CSV conversion is also an explicit interface implementation.
+
+import std.data.csv
+
+class Row is CsvRepresentable {
+    string sku = ""
+
+    func to_csv() returns result<string, CsvError> {
+        return ok(self.sku)
+    }
+
+    common func from_csv(string text) returns result<Row, CsvError> {
+        auto row = Row.new()
+        row.sku = text
+        return ok(row)
+    }
+}
+
+func main() returns void {
+    auto row = Row.new()
+    row.sku = "widget"
+    match row.to_csv() {
+        ok(text) { print("csv: " + text) }
+        err(e) { print(e.message()) }
+    }
+    match Row.from_csv("gadget") {
+        ok(parsed) { print("parsed: " + parsed.sku) }
+        err(e) { print(e.message()) }
+    }
+    return
+}

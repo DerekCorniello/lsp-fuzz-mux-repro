@@ -1,0 +1,5 @@
+import std.*
+import std.math.*
+
+assert(true, "std wildcard + math wildcard")
+print("PASS: std wildcard + math wildcard")

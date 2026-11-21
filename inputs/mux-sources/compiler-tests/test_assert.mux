@@ -1,0 +1,48 @@
+print("=== Assert Builtin Tests ===")
+
+print("")
+print("Testing the required condition and message arguments...")
+assert(true, "true condition should pass")
+assert(!false, "false should be negated")
+print("  PASS: assert(bool, string)")
+
+print("")
+print("Testing equality and inequality expressions...")
+assert(5 == 5, "equal integers")
+assert(3 != 4, "inequal integers")
+assert("hello" == "hello", "equal strings")
+print("  PASS: equality and inequality")
+
+print("")
+print("Testing ordering, range, and approximate expressions...")
+assert(2 < 3, "less than")
+assert(3 <= 3, "less than or equal")
+assert(4 > 3, "greater than")
+assert(3 >= 3, "greater than or equal")
+assert(5 >= 1 && 5 <= 10, "in range")
+assert(1.0 < 1.0001 + 0.001, "approximately equal")
+print("  PASS: ordering, range, and approximate comparisons")
+
+print("")
+print("Testing a custom message...")
+assert(true, "this should not fail")
+print("  PASS: custom message")
+
+print("")
+print("Testing optional inspection...")
+optional<int> opt_some = some(42)
+assert(opt_some.is_some(), "expected Some")
+optional<int> opt_none = none
+assert(opt_none.is_none(), "expected None")
+print("  PASS: optional inspection")
+
+print("")
+print("Testing result inspection...")
+result<int, string> ok_val = ok(42)
+assert(ok_val.is_ok(), "expected Ok")
+result<int, string> err_val = err("test error")
+assert(err_val.is_err(), "expected Err")
+print("  PASS: result inspection")
+
+print("")
+print("=== All Assert Tests Passed ===")

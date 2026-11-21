@@ -1,0 +1,142 @@
+// An HTTP server and a client talking to each other over loopback.
+//
+// The server binds an ephemeral port on 127.0.0.1, a client runs on a second
+// thread, and both shut down cleanly. Nothing leaves the machine and the port
+// number never reaches the output, so the result is the same on every run.
+//
+// Two things about this code are worth more attention than the sockets.
+//
+// FIRST, the shape. Every fallible call returns a `result`; use `match` when
+// both outcomes need different work, and `use` for straightforward flow. The
+// client helper can propagate its HttpError directly. The server helper also
+// performs network and synchronization operations, so it converts those
+// different error types to one display string at its boundary.
+//
+import std.net
+import std.sync
+import std.encoding
+
+func response(string path) returns tuple<int, string> {
+    if path == "/health" {
+        return (200, "{\"ok\":true}")
+    }
+    if path == "/echo" {
+        return (201, "{\"echoed\":true}")
+    }
+    return (404, "{\"error\":\"no such route\"}")
+}
+
+// Send one GET and report the status the server replied with.
+//
+// Returns the status as text rather than printing it, so the caller decides
+// when it is shown. Two threads printing race, and an example whose line order
+// can vary cannot be checked against a recorded output.
+func fetch_status(string address) returns result<string, HttpError> {
+    auto request = net.HttpRequest.new()
+    request.method = "GET"
+    request.url = "http://" + address + "/echo"
+    auto response = use request.send()
+    return ok(response.status.to_string())
+}
+
+func fetch_status_or_error(string address) returns string {
+    auto status = fetch_status(address)
+    if status.is_err() {
+        return "error: " + status.error().message()
+    }
+    return status.value()
+}
+
+func close_stream_with_error(TcpStream stream, string message) returns result<string, string> {
+    stream.close()
+    return err(message)
+}
+
+// Accept one connection, read the request, route on its path, and reply.
+//
+// Everything after accept uses the typed HTTP request/response surface.
+func serve_once(TcpListener listener) returns result<string, string> {
+    auto stream_result = listener.accept()
+    if stream_result.is_err() {
+        return err(stream_result.error().message())
+    }
+    auto stream = stream_result.value()
+    auto request_result = net.HttpRequest.read(stream)
+    if request_result.is_err() {
+        return close_stream_with_error(stream, request_result.error().message())
+    }
+    auto request = request_result.value()
+    auto method = request.method
+    auto path = request.url
+    auto route = response(path)
+    auto headers = net.Headers.new()
+    auto header_result = headers.set("content-type", "application/json")
+    if header_result.is_err() {
+        return close_stream_with_error(stream, header_result.error().message())
+    }
+    auto response_result = net.HttpResponse.from_config(
+        route.left,
+        headers,
+        encoding.utf8_encode(route.right)
+    )
+    if response_result.is_err() {
+        return close_stream_with_error(stream, response_result.error().message())
+    }
+    auto response = response_result.value()
+    auto write_result = response.write(stream)
+    if write_result.is_err() {
+        return close_stream_with_error(stream, write_result.error().message())
+    }
+    stream.close()
+    return ok(method + " " + path)
+}
+
+func run_server() returns result<int, string> {
+    auto listener_result = net.TcpListener.bind("127.0.0.1:0")
+    if listener_result.is_err() {
+        return err(listener_result.error().message())
+    }
+    auto listener = listener_result.value()
+    auto address_result = listener.local_addr()
+    if address_result.is_err() {
+        listener.close()
+        return err(address_result.error().message())
+    }
+    auto address = address_result.value()
+    // The client records its result rather than printing it. Two threads
+    // printing race, and an example whose line order can vary cannot be
+    // checked against a recorded output. `join` below makes the write visible.
+    auto client_status = "(never ran)"
+    auto client_result = sync.spawn(func() returns void {
+        client_status = fetch_status_or_error(address)
+        return
+    })
+    if client_result.is_err() {
+        listener.close()
+        return err(client_result.error().message())
+    }
+    auto client = client_result.value()
+
+    auto served = serve_once(listener)
+    auto joined = client.join()
+    listener.close()
+    if joined.is_err() {
+        return err(joined.error().message())
+    }
+    if served.is_err() {
+        return err(served.error())
+    }
+    auto summary = served.value()
+    print("server handled " + summary)
+    print("client saw status " + client_status)
+    return ok(0)
+}
+
+func main() returns void {
+    auto result = run_server()
+    if result.is_err() {
+        print("http server failed: " + result.error())
+        return
+    }
+    return
+}
