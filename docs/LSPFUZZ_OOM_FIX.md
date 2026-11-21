@@ -102,3 +102,84 @@ The unbounded capture is worth reporting upstream. A proposed PR should:
    than silently shrinking it for every user.
 
 The Mux-specific grammar and harness changes should not be part of that PR.
+
+## Second failure: six-hour campaign
+
+The bounded stdout capture was enough for short pilots but not for a full
+campaign. Full repetition 1 was OOM-killed after 2h38m with:
+
+- 1,189,457 executions
+- 2,933 corpus entries
+- 62,741/320,490 edges
+- 0 objectives
+- `anon-rss: 16526272 kB` (about 16.5 GB)
+
+```text
+Out of memory: Killed process 2073298 (lsp-fuzz-cli)
+anon-rss: 16526272 kB
+```
+
+This is a second, longer-running memory problem. It is not the frozen-execution
+signature from the first failure: the fuzzer was making progress when it was
+killed. Memory now scales with corpus size, roughly 5.6 MB per corpus entry at
+the point of the kill.
+
+The leading suspect is `LspResponseInfo`, which is attached to every corpus
+testcase and retained in memory. It contains:
+
+- every published diagnostic range;
+- every parsed symbol range;
+- full LSP parameter fragments, including completion items, code actions,
+  inlay hints, code lenses, workspace symbols, hierarchy items, and document
+  links.
+
+With thousands of corpus entries, those retained response objects can exceed
+the machine's 23 GB of RAM. The analysis has not yet isolated which field or
+response type dominates.
+
+## Operational detection bug
+
+The first six-hour campaign wrapper used a semicolon between the full and
+baseline invocations. After full repetition 1 failed with status 137, the
+wrapper continued into the baseline run instead of stopping.
+
+The watcher also missed the failure because `scripts/20_run_campaign.sh` writes
+`run.json` only after an accepted fuzzer status. An OOM-killed repetition exits
+early and leaves no completion record. `scripts/25_watch_campaign.py` now:
+
+- scans the driver log for `error:` and `Killed` lines;
+- reports incomplete campaign repetition directories that have a `fuzzer.log`
+  but no `run.json`;
+- keeps checking RSS, stats age, truncation warnings, and disk space.
+
+The abandoned partial `results/full` and `results/baseline` directories were
+removed.
+
+## Recommended next fix
+
+Before another six-hour run, bound the retained per-testcase response metadata.
+The likely options are:
+
+1. Cap the number of diagnostics, symbol ranges, and each parameter-fragment
+   category when `LspResponseInfo` is created. This is the smallest local
+   change, but it trades some generated-operation variety for bounded memory.
+2. Store response metadata on disk and load it only for the selected testcase.
+   This preserves more data but is a larger change to corpus metadata handling.
+3. Run on a machine with substantially more RAM. Extrapolating the observed
+   growth suggests six hours would need roughly 64 GB or more, and the growth
+   may not be linear.
+
+Option 1 is the practical local fix. Any cap must be documented as a
+reproduction setting, applied identically to full and baseline, and monitored.
+A one-hour memory test should show a flat retained-memory curve before starting
+the six-hour repetitions.
+
+## Upstream PR assessment for the second issue
+
+Yes, this is worth raising upstream separately from the stdout-capture bug.
+Retaining full response metadata for every corpus entry is a scaling problem,
+not a Mux-specific issue. An upstream issue or PR should make the retained
+metadata limit configurable, handle a single oversized response without
+unbounded allocation, and add a memory-growth regression test. A hardcoded
+count cap is probably too blunt for upstream without maintainer input; the
+local experiment can use one as a documented workaround.

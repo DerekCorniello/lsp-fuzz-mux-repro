@@ -6,7 +6,8 @@
     "lsp-types pinned to 00b517e1936150cd8ab7a02aeb602c2a5fe66a46",
     "direct fluent-uri dependency moved to 0.4",
     "Cargo.lock tracked",
-    "export-baseline command added for replaying TwoDimBaselineInput solutions without ASAN logs"
+    "export-baseline command added for replaying TwoDimBaselineInput solutions without ASAN logs",
+    "bounded target stdout capture (32 MiB per execution) and reduced input shared-memory mapping (15 GiB to 64 MiB) for long campaigns"
   ],
   "subject": {
     "repo": "https://github.com/muxlang/mux-compiler.git",
@@ -40,9 +41,9 @@
   },
   "harness_patch": "targets/mux/afl-shmem.patch",
   "builds": {
-    "profile": "debug",
-    "instrumented_sha256": "77afffa28e5704a0b51ceafb6844f3b865a842e42e50abffb7faaf70e6c757b1",
-    "ordinary_sha256": "15a27bfb33418fbf39c4b25998eb805bb25222cbcc698f1d2787cebc153bb1ec",
+    "profile": "release",
+    "instrumented_sha256": "6183f3f55b13203ee344c0888df71e0b5b727aaeff4f6cc2138419a7aea3afef",
+    "ordinary_sha256": "a0b5a66afb7fbfadc436194bcd4513e3603cd6dad14dab2ffae6cecf408ae46f",
     "harness_patch_sha256": "b8e92df60b2e47c740eadd7f78d6c89e9a9e1ab8fba0df3e632d2a3e00551df6",
     "afl_map_size": 390922
   },
