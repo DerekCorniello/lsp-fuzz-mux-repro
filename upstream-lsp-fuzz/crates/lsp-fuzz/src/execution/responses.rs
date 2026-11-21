@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    io::{self, BufRead},
+    io::{self, BufRead, BufReader},
 };
 
 use libafl::observers::Observer;
@@ -8,6 +8,8 @@ use libafl_bolts::Named;
 use serde::{Deserialize, Serialize};
 
 use crate::lsp::json_rpc::JsonRPCMessage;
+
+const MAX_CAPTURED_OUTPUT_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LspOutputObserver {
@@ -32,9 +34,16 @@ impl LspOutputObserver {
         &self.captured_messages
     }
 
-    pub fn capture_stdout_content<R: BufRead>(&mut self, mut reader: R) -> io::Result<()> {
-        while let Ok(message) = JsonRPCMessage::read_lsp_payload(&mut reader) {
+    pub fn capture_stdout_content<R: BufRead>(&mut self, reader: R) -> io::Result<()> {
+        let mut limited_reader = BufReader::new(reader.take(MAX_CAPTURED_OUTPUT_BYTES));
+        while let Ok(message) = JsonRPCMessage::read_lsp_payload(&mut limited_reader) {
             self.captured_messages.push(message);
+        }
+        if limited_reader.get_ref().limit() == 0 {
+            tracing::warn!(
+                max_bytes = MAX_CAPTURED_OUTPUT_BYTES,
+                "Truncated target output capture"
+            );
         }
         Ok(())
     }

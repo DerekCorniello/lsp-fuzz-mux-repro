@@ -50,6 +50,16 @@ snapshot plus these changes:
   `00b517e1936150cd8ab7a02aeb602c2a5fe66a46` and the fuzzer's direct
   `fluent-uri` dependency is moved to `0.4`, matching that `lsp-types` commit.
   The generated `Cargo.lock` is tracked so the snapshot builds reproducibly.
+- Memory bounds for long campaigns - `LspOutputObserver::capture_stdout_content`
+  in `crates/lsp-fuzz/src/execution/responses.rs` now stops reading after 32 MiB
+  of target stdout per execution and logs a truncation warning instead of
+  retaining an unbounded `Vec` of messages. The input shared-memory mapping in
+  `crates/lsp-fuzz-cli/src/cli/fuzz.rs` and the three baseline CLIs is reduced
+  from 15 GiB to 64 MiB. Before these bounds, a 15-minute full pilot grew past
+  19 GB RSS and was OOM-killed after ~5 minutes with no execution progress; after
+  them, a 15-minute full pilot used at most 791 MB RSS and ran 88k executions.
+  See [`docs/LSPFUZZ_OOM_FIX.md`](docs/LSPFUZZ_OOM_FIX.md) for the failure
+  analysis and recommended upstream changes.
 
 ### Target harness
 

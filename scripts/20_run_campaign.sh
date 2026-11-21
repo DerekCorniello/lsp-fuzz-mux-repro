@@ -3,14 +3,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Campaign tooling uses release binaries unless explicitly overridden.
+export MUX_BUILD_PROFILE="${MUX_BUILD_PROFILE:-release}"
 # shellcheck source=env.sh
 source "$SCRIPT_DIR/env.sh"
 
 MODE="${1:-full}"
 case "$MODE" in
-    full|baseline|no-context-awareness) ;;
+    full|baseline|no-context-awareness|no-server-feedback) ;;
     *)
-        echo "usage: $0 [full|baseline|no-context-awareness]" >&2
+        echo "usage: $0 [full|baseline|no-context-awareness|no-server-feedback]" >&2
         exit 2
         ;;
 esac
@@ -48,7 +50,6 @@ for repetition in $(seq 1 "$CAMPAIGN_REPETITIONS"); do
     fi
     mkdir -p "$run_dir"
     seed=$((CAMPAIGN_SEED + repetition - 1))
-    fuzz_args+=(--state "$run_dir/state")
     start_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
     case "$MODE" in
@@ -66,7 +67,16 @@ for repetition in $(seq 1 "$CAMPAIGN_REPETITIONS"); do
                 --ablation-mode no-context-awareness
             )
             ;;
+        no-server-feedback)
+            fuzz_args=(
+                fuzz
+                "${common_args[@]}"
+                --language-fragments "Mux=$FRAGMENT_FILE"
+                --ablation-mode no-server-feedback
+            )
+            ;;
     esac
+    fuzz_args+=(--state "$run_dir/state")
 
     log "starting $MODE repetition $repetition/$CAMPAIGN_REPETITIONS (seed=$seed, budget=${CAMPAIGN_HOURS}h)"
     set +e
@@ -86,6 +96,12 @@ for repetition in $(seq 1 "$CAMPAIGN_REPETITIONS"); do
     fi
     status=$?
     set -e
+
+    if [[ "$status" -ne 0 && "$status" -ne 124 && "$status" -ne 130 ]]; then
+        log "error: fuzzer exited early with status $status"
+        tail -40 "$run_dir/fuzzer.log" >&2
+        exit 1
+    fi
 
     end_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     python3 - "$run_dir" "$MODE" "$repetition" "$seed" "$status" "$start_utc" "$end_utc" <<'PY'

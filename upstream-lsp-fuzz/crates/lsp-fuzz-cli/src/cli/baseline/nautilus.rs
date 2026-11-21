@@ -211,7 +211,7 @@ impl NautilusBaseline {
             info!("Crash stack hashing will be enabled");
         }
         let mut executor = {
-            const INPUT_SHM_SIZE: usize = 15 * 1024 * 1024 * 1024;
+            const INPUT_SHM_SIZE: usize = 64 * 1024 * 1024;
             let test_case_shmem = shmem_provider
                 .new_shmem(INPUT_SHM_SIZE)
                 .context("Creating shared memory for test case passing")?;

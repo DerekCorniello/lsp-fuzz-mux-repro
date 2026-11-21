@@ -4,6 +4,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Campaign tooling uses release binaries unless explicitly overridden.
+export MUX_BUILD_PROFILE="${MUX_BUILD_PROFILE:-release}"
 # shellcheck source=env.sh
 source "$SCRIPT_DIR/env.sh"
 

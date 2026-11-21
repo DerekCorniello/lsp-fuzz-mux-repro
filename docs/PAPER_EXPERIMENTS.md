@@ -58,3 +58,7 @@ never claimed as bugs.
   `workspace/` plus `transcript.lsp` for the same replay tool.
 - Byte-level test-case minimization is not implemented in the pinned LSPFuzz
   snapshot. Exported cases are message-level reproductions.
+- Target stdout capture is capped at 32 MiB per execution. A server response
+  that exceeds the cap is truncated and logs a warning, so the excess does not
+  contribute response feedback. No truncation occurred in the 10- or 15-minute
+  pilots, but longer runs may encounter it on pathological inputs.
