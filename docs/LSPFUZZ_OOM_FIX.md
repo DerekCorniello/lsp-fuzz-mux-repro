@@ -183,3 +183,18 @@ metadata limit configurable, handle a single oversized response without
 unbounded allocation, and add a memory-growth regression test. A hardcoded
 count cap is probably too blunt for upstream without maintainer input; the
 local experiment can use one as a documented workaround.
+
+## Local metadata cap
+
+The local workaround caps retained response metadata when each corpus testcase's
+`LspResponseInfo` is created:
+
+- diagnostics: at most 256 ranges;
+- symbol ranges: at most 256 ranges;
+- each `ParamFragments` category: at most 32 items.
+
+The fields are otherwise unchanged. The cap is applied identically to every mode
+because it sits in the shared `LspResponseFeedback::append_metadata` path. This
+bounds retained memory at the cost of discarding some response-derived mutation
+material once a category is full. A one-hour full-mode memory run is used to
+check that retained memory stays flat before committing to six-hour runs.

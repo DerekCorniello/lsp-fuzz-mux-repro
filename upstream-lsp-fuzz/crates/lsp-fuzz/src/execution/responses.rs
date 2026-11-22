@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::lsp::json_rpc::JsonRPCMessage;
 
-const MAX_CAPTURED_OUTPUT_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_CAPTURED_OUTPUT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LspOutputObserver {

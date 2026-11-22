@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::{HashSet, VecDeque},
-};
+use std::{borrow::Cow, collections::HashSet, hash::Hash};
 
 use derive_more::Debug;
 use libafl::{
@@ -33,6 +30,32 @@ use crate::{
 pub mod metadata;
 
 pub mod matching;
+
+const MAX_DIAGNOSTICS: usize = 256;
+const MAX_SYMBOL_RANGES: usize = 256;
+const MAX_PARAM_FRAGMENTS_PER_KIND: usize = 32;
+
+fn insert_bounded<T>(set: &mut HashSet<T>, value: T, limit: usize)
+where
+    T: Eq + Hash,
+{
+    if set.len() < limit {
+        set.insert(value);
+    }
+}
+
+fn extend_bounded<T, I>(set: &mut HashSet<T>, values: I, limit: usize)
+where
+    T: Eq + Hash,
+    I: IntoIterator<Item = T>,
+{
+    for value in values {
+        if set.len() >= limit {
+            break;
+        }
+        set.insert(value);
+    }
+}
 
 #[derive(Debug)]
 pub struct LspResponseFeedback {
@@ -104,13 +127,22 @@ where
         let mut diagnostics = HashSet::new();
 
         for pub_diag in matching.find_notifications::<PublishDiagnostics>() {
+            if diagnostics.len() >= MAX_DIAGNOSTICS {
+                break;
+            }
             let uri = LspInput::lift_uri(&pub_diag.uri);
             for diag_item in pub_diag.diagnostics.iter() {
-                let diag = Diagnostic {
-                    uri: uri.as_ref().clone(),
-                    range: diag_item.range,
-                };
-                diagnostics.insert(diag);
+                if diagnostics.len() >= MAX_DIAGNOSTICS {
+                    break;
+                }
+                insert_bounded(
+                    &mut diagnostics,
+                    Diagnostic {
+                        uri: uri.as_ref().clone(),
+                        range: diag_item.range,
+                    },
+                    MAX_DIAGNOSTICS,
+                );
             }
         }
 
@@ -120,72 +152,130 @@ where
         for (req, res) in matching.responses {
             use LspResponse::*;
             match res {
-                CodeActionRequest(Some(cas)) => cas.iter().cloned().for_each(|ca| match ca {
-                    lsp_types::CodeActionOrCommand::Command(command) => {
-                        param_fragments.commands.insert(command);
+                CodeActionRequest(Some(cas)) => {
+                    for ca in cas {
+                        match ca {
+                            lsp_types::CodeActionOrCommand::Command(command) => {
+                                insert_bounded(
+                                    &mut param_fragments.commands,
+                                    command,
+                                    MAX_PARAM_FRAGMENTS_PER_KIND,
+                                );
+                            }
+                            lsp_types::CodeActionOrCommand::CodeAction(code_action) => {
+                                insert_bounded(
+                                    &mut param_fragments.code_actions,
+                                    code_action,
+                                    MAX_PARAM_FRAGMENTS_PER_KIND,
+                                );
+                            }
+                        }
                     }
-                    lsp_types::CodeActionOrCommand::CodeAction(code_action) => {
-                        param_fragments.code_actions.insert(code_action);
-                    }
-                }),
+                }
                 InlayHintRequest(Some(inlay_hints)) => {
-                    param_fragments.inlay_hints.extend(inlay_hints.into_iter());
+                    extend_bounded(
+                        &mut param_fragments.inlay_hints,
+                        inlay_hints,
+                        MAX_PARAM_FRAGMENTS_PER_KIND,
+                    );
                 }
                 Completion(Some(res)) => {
                     let items = match res {
                         CompletionResponse::Array(items) => items,
                         CompletionResponse::List(list) => list.items,
                     };
-                    param_fragments.completion_items.extend(items.into_iter());
+                    extend_bounded(
+                        &mut param_fragments.completion_items,
+                        items,
+                        MAX_PARAM_FRAGMENTS_PER_KIND,
+                    );
                 }
                 CodeLensRequest(Some(code_lens)) => {
-                    param_fragments.code_lens.extend(code_lens.into_iter());
+                    extend_bounded(
+                        &mut param_fragments.code_lens,
+                        code_lens,
+                        MAX_PARAM_FRAGMENTS_PER_KIND,
+                    );
                 }
                 WorkspaceSymbolRequest(Some(WorkspaceSymbolResponse::Nested(symbols))) => {
-                    param_fragments.workspace_symbols.extend(symbols.clone());
-                    symbol_ranges.extend(symbols.into_iter().filter_map(|sym| {
-                        if let OneOf::Left(it) = sym.location {
-                            Some(SymbolRange::new(it.uri, it.range))
-                        } else {
-                            None
+                    for sym in symbols {
+                        let range = match &sym.location {
+                            OneOf::Left(it) => Some((it.uri.clone(), it.range)),
+                            OneOf::Right(_) => None,
+                        };
+                        insert_bounded(
+                            &mut param_fragments.workspace_symbols,
+                            sym,
+                            MAX_PARAM_FRAGMENTS_PER_KIND,
+                        );
+                        if let Some((uri, range)) = range {
+                            insert_bounded(
+                                &mut symbol_ranges,
+                                SymbolRange::new(uri, range),
+                                MAX_SYMBOL_RANGES,
+                            );
                         }
-                    }));
+                        if param_fragments.workspace_symbols.len() >= MAX_PARAM_FRAGMENTS_PER_KIND
+                            && symbol_ranges.len() >= MAX_SYMBOL_RANGES
+                        {
+                            break;
+                        }
+                    }
                 }
                 WorkspaceSymbolRequest(Some(WorkspaceSymbolResponse::Flat(symbols)))
                 | DocumentSymbolRequest(Some(DocumentSymbolResponse::Flat(symbols))) => {
-                    symbol_ranges.extend(
-                        symbols.into_iter().map(|sym| {
-                            SymbolRange::new(sym.location.uri.clone(), sym.location.range)
-                        }),
-                    );
+                    for sym in symbols {
+                        if symbol_ranges.len() >= MAX_SYMBOL_RANGES {
+                            break;
+                        }
+                        insert_bounded(
+                            &mut symbol_ranges,
+                            SymbolRange::new(sym.location.uri.clone(), sym.location.range),
+                            MAX_SYMBOL_RANGES,
+                        );
+                    }
                 }
                 DocumentSymbolRequest(Some(DocumentSymbolResponse::Nested(symbols))) => {
                     if let LspMessage::DocumentSymbolRequest(req) = req {
-                        let mut queue = VecDeque::from_iter(symbols.into_iter());
-                        while let Some(symbol) = queue.pop_front() {
-                            let mut symbol = symbol.clone();
-                            if let Some(children) = symbol.children.take() {
-                                queue.extend(children);
+                        let mut stack = symbols;
+                        while let Some(mut symbol) = stack.pop() {
+                            if symbol_ranges.len() >= MAX_SYMBOL_RANGES {
+                                break;
                             }
-                            symbol_ranges.insert(SymbolRange::new(
-                                req.text_document.uri.clone(),
-                                symbol.selection_range,
-                            ));
+                            if let Some(children) = symbol.children.take() {
+                                stack.extend(children);
+                            }
+                            insert_bounded(
+                                &mut symbol_ranges,
+                                SymbolRange::new(
+                                    req.text_document.uri.clone(),
+                                    symbol.selection_range,
+                                ),
+                                MAX_SYMBOL_RANGES,
+                            );
                         }
                     }
                 }
                 TypeHierarchyPrepare(Some(items)) => {
-                    param_fragments
-                        .type_hierarchy_items
-                        .extend(items.into_iter());
+                    extend_bounded(
+                        &mut param_fragments.type_hierarchy_items,
+                        items,
+                        MAX_PARAM_FRAGMENTS_PER_KIND,
+                    );
                 }
                 CallHierarchyPrepare(Some(items)) => {
-                    param_fragments
-                        .call_hierarchy_items
-                        .extend(items.into_iter());
+                    extend_bounded(
+                        &mut param_fragments.call_hierarchy_items,
+                        items,
+                        MAX_PARAM_FRAGMENTS_PER_KIND,
+                    );
                 }
                 DocumentLinkRequest(Some(links)) => {
-                    param_fragments.document_links.extend(links.into_iter());
+                    extend_bounded(
+                        &mut param_fragments.document_links,
+                        links,
+                        MAX_PARAM_FRAGMENTS_PER_KIND,
+                    );
                 }
                 _ => {}
             }
