@@ -1622,54 +1622,59 @@
             "name": "sum_expression"
           },
           {
-            "type": "REPEAT",
-            "content": {
-              "type": "SEQ",
-              "members": [
-                {
-                  "type": "CHOICE",
-                  "members": [
-                    {
-                      "type": "CHOICE",
-                      "members": [
-                        {
-                          "type": "STRING",
-                          "value": "=="
-                        },
-                        {
-                          "type": "STRING",
-                          "value": "!="
-                        },
-                        {
-                          "type": "STRING",
-                          "value": "<"
-                        },
-                        {
-                          "type": "STRING",
-                          "value": "<="
-                        },
-                        {
-                          "type": "STRING",
-                          "value": ">"
-                        },
-                        {
-                          "type": "STRING",
-                          "value": ">="
-                        }
-                      ]
-                    },
-                    {
-                      "type": "STRING",
-                      "value": "in"
-                    }
-                  ]
-                },
-                {
-                  "type": "SYMBOL",
-                  "name": "sum_expression"
-                }
-              ]
-            }
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "CHOICE",
+                    "members": [
+                      {
+                        "type": "CHOICE",
+                        "members": [
+                          {
+                            "type": "STRING",
+                            "value": "=="
+                          },
+                          {
+                            "type": "STRING",
+                            "value": "!="
+                          },
+                          {
+                            "type": "STRING",
+                            "value": "<"
+                          },
+                          {
+                            "type": "STRING",
+                            "value": "<="
+                          },
+                          {
+                            "type": "STRING",
+                            "value": ">"
+                          },
+                          {
+                            "type": "STRING",
+                            "value": ">="
+                          }
+                        ]
+                      },
+                      {
+                        "type": "STRING",
+                        "value": "in"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "SYMBOL",
+                    "name": "sum_expression"
+                  }
+                ]
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
           }
         ]
       }
@@ -3161,6 +3166,10 @@
     ],
     [
       "primary_expression",
+      "call_target",
+      "type_path"
+    ],
+    [
       "call_target",
       "type_path"
     ],
