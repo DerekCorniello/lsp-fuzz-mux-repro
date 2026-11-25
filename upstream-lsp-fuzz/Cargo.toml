@@ -48,7 +48,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = "0"
 tokio-util = { version = "0", features = ["full"] }
 tempfile = "3"
-tree-sitter = { version = "0.25" }
+tree-sitter = { version = "0.26" }
 tuple_list = "0.1"
 zstd = { version = "0.13", features = ["zstdmt"], default-features = false }
 

@@ -1,4 +1,10 @@
-use std::{borrow::Cow, hash::Hash, ops::Range};
+use std::{
+    borrow::Cow,
+    hash::Hash,
+    ops::{ControlFlow, Range},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use ahash::{HashMap, HashSet};
 use generation::{GrammarContext, GrammarContextLookup};
@@ -34,6 +40,102 @@ pub mod mutations;
 
 pub const LINE_SEP: u8 = b'\n';
 
+const MAX_PARSE_DURATION: Duration = Duration::from_millis(500);
+
+static CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn capture_timestamp_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn capture_rss_kb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status.lines().find_map(|line| {
+                line.strip_prefix("VmRSS:")
+                    .and_then(|value| value.split_whitespace().next())
+                    .and_then(|value| value.parse().ok())
+            })
+        })
+        .unwrap_or(0)
+}
+
+fn capture_prune(directory: &std::path::Path, sequence: u64) {
+    let floor = sequence.saturating_sub(2048);
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some(rest) = name.strip_prefix("parse-") else {
+            continue;
+        };
+        let Some(sequence) = rest.split('-').nth(1).and_then(|value| value.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        if sequence <= floor {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+fn capture_parse_input(phase: &str, content: &[u8]) {
+    let Some(directory) = std::env::var_os("LSPFUZZ_PARSE_CAPTURE_DIR") else {
+        return;
+    };
+    let directory = std::path::PathBuf::from(directory);
+    std::fs::create_dir_all(&directory).expect("Create parse capture directory");
+    let sequence = CAPTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let stem = format!("parse-{}-{sequence:08}-{phase}", std::process::id());
+    let temporary = directory.join(format!("{stem}.mux.tmp"));
+    let snapshot = directory.join(format!("{stem}.mux"));
+    std::fs::write(&temporary, content).expect("Write parse input capture");
+    std::fs::rename(&temporary, &snapshot).expect("Publish parse input capture");
+    let meta = format!(
+        "phase={phase} sequence={sequence} len={} rss_kb={} timestamp_ms={}\n",
+        content.len(),
+        capture_rss_kb(),
+        capture_timestamp_ms()
+    );
+    std::fs::write(directory.join(format!("{stem}.meta")), meta)
+        .expect("Write parse input metadata");
+    if sequence % 512 == 0 {
+        capture_prune(&directory, sequence);
+    }
+}
+
+fn should_reparse_fresh(edit: &tree_sitter::InputEdit) -> bool {
+    let replaced = edit.old_end_byte.saturating_sub(edit.start_byte);
+    let removed_lines = edit
+        .old_end_position
+        .row
+        .saturating_sub(edit.start_position.row);
+    replaced > 64 || removed_lines > 4
+}
+
+fn capture_input_edit(edit: &tree_sitter::InputEdit) {
+    let Some(directory) = std::env::var_os("LSPFUZZ_PARSE_CAPTURE_DIR") else {
+        return;
+    };
+    let directory = std::path::PathBuf::from(directory);
+    std::fs::create_dir_all(&directory).expect("Create parse capture directory");
+    let sequence = CAPTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let stem = format!("parse-{}-{sequence:08}-edit", std::process::id());
+    let temporary = directory.join(format!("{stem}.txt.tmp"));
+    let snapshot = directory.join(format!("{stem}.txt"));
+    std::fs::write(&temporary, format!("{edit:?}\n")).expect("Write parse edit capture");
+    std::fs::rename(&temporary, &snapshot).expect("Publish parse edit capture");
+    if sequence % 512 == 0 {
+        capture_prune(&directory, sequence);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "_TextDocumentSerialized", into = "_TextDocumentSerialized")]
 pub struct TextDocument {
@@ -52,12 +154,46 @@ pub struct Metadata {
     pub node_signatures: HashMap<SmallVec<[u16; SIGNATURE_LEVEL]>, HashSet<tree_sitter::Point>>,
 }
 
+fn parse_limited(
+    parser: &mut tree_sitter::Parser,
+    content: &[u8],
+    old_tree: Option<&tree_sitter::Tree>,
+) -> Option<tree_sitter::Tree> {
+    let len = content.len();
+    let started = Instant::now();
+    let mut callback = |byte: usize, _: tree_sitter::Point| {
+        (byte < len).then(|| &content[byte..]).unwrap_or_default()
+    };
+    let mut progress = |_state: &tree_sitter::ParseState| {
+        if started.elapsed() < MAX_PARSE_DURATION {
+            ControlFlow::Continue(())
+        } else {
+            ControlFlow::Break(())
+        }
+    };
+    let options = tree_sitter::ParseOptions::new().progress_callback(&mut progress);
+    parser.parse_with_options(&mut callback, old_tree, Some(options))
+}
+
+fn empty_parse_tree(language: Language) -> tree_sitter::Tree {
+    language
+        .tree_sitter_parser()
+        .parse(b"", None)
+        .expect("Cannot parse empty content")
+}
+
 impl Metadata {
     pub fn generate(language: Language, content: &[u8]) -> Self {
+        capture_parse_input("fresh", content);
         let mut parser = language.tree_sitter_parser();
-        let parse_tree = parser
-            .parse(content, None)
-            .expect("Cannot parse input content");
+        let parse_tree = parse_limited(&mut parser, content, None).unwrap_or_else(|| {
+            eprintln!(
+                "parse timeout after {:?}; len={}",
+                MAX_PARSE_DURATION,
+                content.len()
+            );
+            empty_parse_tree(language)
+        });
         let mut result = Self {
             parse_tree,
             node_type_ranges: Default::default(),
@@ -123,10 +259,20 @@ impl TextDocument {
     }
 
     pub fn update_metadata(&mut self) {
+        capture_parse_input("incremental", &self.content);
         let mut parser = self.language.tree_sitter_parser();
-        self.metadata.parse_tree = parser
-            .parse(&self.content, Some(&self.metadata.parse_tree))
-            .expect("Parsing should not fail");
+        let parsed = {
+            let old_tree = &self.metadata.parse_tree;
+            parse_limited(&mut parser, &self.content, Some(old_tree))
+        };
+        self.metadata.parse_tree = parsed.unwrap_or_else(|| {
+            eprintln!(
+                "parse timeout after {:?}; len={}",
+                MAX_PARSE_DURATION,
+                self.content.len()
+            );
+            empty_parse_tree(self.language)
+        });
         self.metadata.update_node_info();
     }
 
@@ -192,9 +338,15 @@ impl GrammarBasedMutation for TextDocument {
     where
         E: FnOnce(&mut Vec<u8>) -> tree_sitter::InputEdit,
     {
+        capture_parse_input("previous", &self.content);
         let input_edit = edit(&mut self.content);
-        self.metadata.parse_tree.edit(&input_edit);
-        self.update_metadata();
+        capture_input_edit(&input_edit);
+        if should_reparse_fresh(&input_edit) {
+            self.metadata = Metadata::generate(self.language, &self.content);
+        } else {
+            self.metadata.parse_tree.edit(&input_edit);
+            self.update_metadata();
+        }
         input_edit
     }
 
@@ -218,9 +370,9 @@ fn edit_for_node_replacement(
     let (delta_rows, delta_cols) = measure_fragment::<LINE_SEP>(replacement);
     let (start_position, old_end_position) = (range.start_point, range.end_point);
     let new_end_position = tree_sitter::Point {
-        row: old_end_position.row + delta_rows,
+        row: start_position.row + delta_rows,
         column: if delta_rows == 0 {
-            old_end_position.column + delta_cols
+            start_position.column + delta_cols
         } else {
             delta_cols
         },
@@ -354,6 +506,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn large_deletions_force_fresh_parse() {
+        let small = tree_sitter::InputEdit {
+            start_byte: 0,
+            old_end_byte: 4,
+            new_end_byte: 4,
+            start_position: tree_sitter::Point { row: 0, column: 0 },
+            old_end_position: tree_sitter::Point { row: 0, column: 4 },
+            new_end_position: tree_sitter::Point { row: 0, column: 4 },
+        };
+        let large = tree_sitter::InputEdit {
+            start_byte: 11,
+            old_end_byte: 133,
+            new_end_byte: 12,
+            start_position: tree_sitter::Point { row: 11, column: 0 },
+            old_end_position: tree_sitter::Point { row: 21, column: 0 },
+            new_end_position: tree_sitter::Point { row: 11, column: 1 },
+        };
+        assert!(!should_reparse_fresh(&small));
+        assert!(should_reparse_fresh(&large));
+    }
+
+    #[test]
     fn test_measure_fragment() {
         // Test case 1: Single line, no separators
         let fragment = b"hello";
@@ -384,6 +558,30 @@ mod tests {
         let (rows, cols) = measure_fragment::<LINE_SEP>(fragment);
         assert_eq!(rows, 2);
         assert_eq!(cols, 4);
+    }
+
+    #[test]
+    fn replacement_edit_uses_start_position() {
+        let range = tree_sitter::Range {
+            start_byte: 8,
+            end_byte: 13,
+            start_point: tree_sitter::Point { row: 1, column: 2 },
+            end_point: tree_sitter::Point { row: 1, column: 7 },
+        };
+
+        let same_line = edit_for_node_replacement(range, b"xy");
+        assert_eq!(same_line.new_end_byte, 10);
+        assert_eq!(
+            same_line.new_end_position,
+            tree_sitter::Point { row: 1, column: 4 }
+        );
+
+        let multiline = edit_for_node_replacement(range, b"x\nyz");
+        assert_eq!(multiline.new_end_byte, 12);
+        assert_eq!(
+            multiline.new_end_position,
+            tree_sitter::Point { row: 2, column: 2 }
+        );
     }
 
     #[test]
