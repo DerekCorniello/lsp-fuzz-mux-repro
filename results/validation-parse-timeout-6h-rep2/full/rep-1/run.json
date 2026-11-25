@@ -1,0 +1,11 @@
+{
+  "mode": "full",
+  "repetition": 1,
+  "seed": 1,
+  "status": 0,
+  "start_utc": "2026-11-24T20:19:44Z",
+  "end_utc": "2026-11-25T02:19:51Z",
+  "last_stat": "3219,0,21607,2184134,64053",
+  "stats_file": "/home/derekcorn/code/advswe/lsp-fuzz-mux-repro/results/validation-parse-timeout-6h-rep2/full/rep-1/state/stats",
+  "state_dir": "/home/derekcorn/code/advswe/lsp-fuzz-mux-repro/results/validation-parse-timeout-6h-rep2/full/rep-1/state"
+}
